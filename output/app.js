@@ -5,76 +5,170 @@
 const dataStore = {};
 let syncTimer = null;
 let nextId = 105;
+let dismissedAlerts = new Set();
+let detectTimers = {};
 
-function updateTimestamp() {
-    const el = document.getElementById('last-updated');
-    if (el) el.innerText = `Last synced: ${new Date().toLocaleTimeString()}`;
+// FEATURE 2: Undo/Redo
+let undoStack = [];
+let redoStack = [];
+
+function pushHistory() {
+    undoStack.push(JSON.stringify(dataStore));
+    if (undoStack.length > 20) undoStack.shift();
+    redoStack = []; 
 }
 
-function toggleLoading(show) {
-    const el = document.getElementById('loading-spinner');
-    if (el) el.style.display = show ? 'block' : 'none';
+async function undo() {
+    if (undoStack.length === 0) return;
+    redoStack.push(JSON.stringify(dataStore));
+    const prevState = JSON.parse(undoStack.pop());
+    await restoreState(prevState);
+    showToast('Action Undone');
 }
 
-function toggleOffline(offline) {
-    const el = document.getElementById('offline-banner');
-    if (el) el.style.display = offline ? 'block' : 'none';
+async function redo() {
+    if (redoStack.length === 0) return;
+    undoStack.push(JSON.stringify(dataStore));
+    const nextState = JSON.parse(redoStack.pop());
+    await restoreState(nextState);
+    showToast('Action Redone');
 }
 
-function showSyncStatus(text, type) {
-    let el = document.getElementById('sync-status');
-    if (!el) {
-        el = document.createElement('div');
-        el.id = 'sync-status';
-        document.body.appendChild(el);
-    }
-    el.innerText = text.toUpperCase();
-    el.className = `status-${type}`;
-    el.style.opacity = '1';
-    if (type === 'saved') {
-        setTimeout(() => { if (el.innerText === 'SAVED') el.style.opacity = '0'; }, 2000);
-    }
-}
-
-async function loadData() {
-    toggleLoading(true);
-    const sheets = ['Products', 'Categories', 'Summary'];
-    let success = true;
-    for (const sheet of sheets) {
-        try {
-            const res = await fetch(`/api/${sheet}`);
-            const json = await res.json();
-            for (const [key, value] of Object.entries(json)) {
-                const id = sheet + '_' + key;
-                dataStore[id] = value;
-                setCellValue(id, value);
-            }
-            toggleOffline(false);
-        } catch (e) {
-            console.error(`Error loading sheet ${sheet}:`, e);
-            toggleOffline(true);
-            success = false;
+async function restoreState(state) {
+    Object.keys(dataStore).forEach(k => delete dataStore[k]);
+    Object.assign(dataStore, state);
+    document.getElementById('products-body').innerHTML = ''; 
+    const sk = Object.keys(dataStore).sort();
+    for (const id of sk) {
+        const val = dataStore[id];
+        if (id.startsWith('Products_A')) {
+            const rowNum = id.match(/\d+/)[0];
+            createProductRowSilently(rowNum);
         }
+        setCellValue(id, val);
+        await fetch('/api/cell', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: id.replace('_', '!'), value: val, type: typeof val === 'number' ? 'NUMBER' : 'STRING' })
+        });
     }
     updateAllValues();
     attachListeners();
+}
+
+async function importExcel(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    toggleLoading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        const res = await fetch('/api/import', { method: 'POST', body: formData });
+        if (res.ok) {
+            showToast('New file imported successfully');
+            document.getElementById('products-body').innerHTML = '';
+            await loadData();
+        }
+    } catch (e) { showToast('Import failed', 'error'); }
     toggleLoading(false);
-    if (success) updateTimestamp();
+}
+
+let currentSort = { col: -1, dir: 0 }; 
+function sortColumn(colIndex) {
+    const tbody = document.getElementById('products-body');
+    const rows = Array.from(tbody.querySelectorAll('tr[data-row]'));
+    document.querySelectorAll('.sort-indicator').forEach(el => el.innerText = '');
+    if (currentSort.col === colIndex) { currentSort.dir = (currentSort.dir + 1) % 3; } 
+    else { currentSort.col = colIndex; currentSort.dir = 1; }
+
+    if (currentSort.dir === 0) { rows.sort((a, b) => parseInt(a.dataset.row) - parseInt(b.dataset.row)); } 
+    else {
+        const indicator = document.getElementById(`sort-${colIndex}`);
+        indicator.innerText = currentSort.dir === 1 ? ' ↑' : ' ↓';
+        rows.sort((a, b) => {
+            let v1 = getRowValue(a, colIndex);
+            let v2 = getRowValue(b, colIndex);
+            if (typeof v1 === 'string') return currentSort.dir === 1 ? v1.localeCompare(v2) : v2.localeCompare(v1);
+            return currentSort.dir === 1 ? v1 - v2 : v2 - v1;
+        });
+    }
+    rows.forEach(r => tbody.appendChild(r));
+    computeAnalytics();
+}
+
+function getRowValue(row, colIndex) {
+    const cols = ['A', 'B', 'C', 'D', 'E'];
+    return getCellValue(`Products_${cols[colIndex]}${row.dataset.row}`);
+}
+
+async function addProduct() {
+    pushHistory();
+    const table = document.getElementById('products-body');
+    const rows = Array.from(table.querySelectorAll('tr[data-row]'));
+    let maxRowNum = 1;
+    rows.forEach(r => {
+        const n = parseInt(r.dataset.row); if (n > maxRowNum) maxRowNum = n;
+    });
+    const rowNum = maxRowNum + 1;
+    
+    createProductRowSilently(rowNum);
+    const newId = nextId++;
+    setCellValue(`Products_A${rowNum}`, newId);
+    
+    fetch('/api/cell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: `Products!A${rowNum}`, value: newId, type: 'NUMBER' })
+    });
+    
+    attachListeners();
+    updateAllValues();
+    handleSearchFilter();
+    showToast('New Product Added');
+}
+
+async function duplicateProduct(rowNum) {
+    pushHistory();
+    const table = document.getElementById('products-body');
+    const existingRow = document.querySelector(`tr[data-row="${rowNum}"]`);
+    let maxRowNum = 1;
+    Array.from(table.querySelectorAll('tr[data-row]')).forEach(r => {
+        const n = parseInt(r.dataset.row); if (n > maxRowNum) maxRowNum = n;
+    });
+    const newRowNum = maxRowNum + 1;
+    createProductRowSilently(newRowNum);
+    const newId = nextId++;
+    setCellValue(`Products_A${newRowNum}`, newId);
+    setCellValue(`Products_B${newRowNum}`, getCellValue(`Products_B${rowNum}`));
+    setCellValue(`Products_C${newRowNum}`, getCellValue(`Products_C${rowNum}`));
+    setCellValue(`Products_D${newRowNum}`, getCellValue(`Products_D${rowNum}`));
+    setCellValue(`Products_E${newRowNum}`, getCellValue(`Products_E${rowNum}`));
+    existingRow.after(document.querySelector(`tr[data-row="${newRowNum}"]`));
+    ['A','B','C','D','E'].forEach(col => { const id = `Products_${col}${newRowNum}`; recalculate({ target: { id, value: getCellValue(id) } }); });
+    showToast('Product Duplicated');
+    updateAllValues();
+    attachListeners();
+}
+
+function showToast(msg) {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerText = msg;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
 }
 
 async function recalculate(event) {
     const target = event.target || event;
     if (!target || !target.id) return;
-
+    if (event.type === 'change' || (!event.type && target.id)) pushHistory();
     updateAllValues();
-    
     const id = target.id;
     const val = getCellValue(id);
     const addr = id.replace('_', '!');
-
     clearTimeout(syncTimer);
     showSyncStatus('saving...', 'saving');
-    
     syncTimer = setTimeout(async () => {
         try {
             const res = await fetch('/api/cell', {
@@ -82,233 +176,161 @@ async function recalculate(event) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ address: addr, value: val, type: typeof val === 'number' ? 'NUMBER' : 'STRING' })
             });
-            if (res.ok) {
-                showSyncStatus('saved', 'saved');
-                target.classList.remove('sync-error');
-                target.classList.add('save-success-ping');
-                setTimeout(() => target.classList.remove('save-success-ping'), 1000);
-                updateTimestamp();
-            } else { throw new Error(); }
-        } catch (e) {
-            showSyncStatus('sync error', 'error');
-            target.classList.add('sync-error');
-        }
+            if (res.ok) { showSyncStatus('saved', 'saved'); updateTimestamp(); }
+        } catch (e) { showSyncStatus('error', 'error'); }
     }, 500);
 }
 
-function addProduct() {
+function createProductRowSilently(rowNum) {
     const table = document.getElementById('products-body');
-    const rows = Array.from(table.querySelectorAll('tr[data-row]'));
-    
-    let maxRowNum = 1;
-    rows.forEach(r => {
-        const n = parseInt(r.dataset.row);
-        if (n > maxRowNum) maxRowNum = n;
-    });
-    const rowNum = maxRowNum + 1;
-    
+    if (!table) return;
     const row = document.createElement('tr');
     row.dataset.row = rowNum;
     row.classList.add('new-row-anim');
-    
-    const idValue = nextId++;
-    
     row.innerHTML = `
-        <td id="Products_A${rowNum}" class="read-only">${idValue}</td>
+        <td><span id="Products_A${rowNum}" class="id-text id-pill">---</span></td>
         <td><input type="text" id="Products_B${rowNum}" placeholder="Product name"></td>
         <td>
             <div class="select-pill-wrapper">
                 <select id="Products_C${rowNum}" class="category-pill-select">
-                    <option value="Electronics">Electronics</option>
-                    <option value="Furniture">Furniture</option>
+                    <option value="Electronics">Electronics</option><option value="Furniture">Furniture</option>
+                    <option value="Clothing">Clothing</option><option value="Stationery">Stationery</option>
+                    <option value="Food">Food</option><option value="Sports">Sports</option><option value="Other">Other</option>
                 </select>
             </div>
         </td>
+        <td><div class="price-cell"><span class="currency-label">$</span><input type="number" id="Products_D${rowNum}"></div></td>
+        <td><div class="stock-cell-content"><span id="Products_E_indicator_${rowNum}" class="stock-dot"></span><input type="number" id="Products_E${rowNum}"></div></td>
         <td>
-            <div class="price-cell">
-                <span class="currency-label">$</span>
-                <input type="number" id="Products_D${rowNum}" placeholder="0.00">
+            <div class="action-buttons">
+                <button class="btn-sm-icon" onclick="duplicateProduct(${rowNum})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                <button class="btn-sm-icon delete" onclick="deleteProduct(${rowNum})">×</button>
             </div>
-        </td>
-        <td>
-            <div class="stock-cell-content">
-                <span id="Products_E_indicator_${rowNum}" class="stock-dot"></span>
-                <input type="number" id="Products_E${rowNum}" placeholder="0">
-            </div>
-        </td>
-        <td style="text-align: center;">
-            <button class="btn-delete" onclick="deleteProduct(${rowNum})" title="Delete row">×</button>
         </td>
     `;
-    
     table.appendChild(row);
-    
-    fetch('/api/cell', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: `Products!A${rowNum}`, value: idValue, type: 'NUMBER' })
-    });
-    
-    attachListeners();
-    updateAllValues();
-    handleSearchFilter();
-}
-
-async function deleteProduct(rowNum) {
-    if (!confirm('Discard this product row?')) return;
-    
-    const row = document.querySelector(`tr[data-row="${rowNum}"]`);
-    if (!row) return;
-
-    row.classList.add('row-out-anim');
-    showSyncStatus('deleting...', 'saving');
-
-    setTimeout(async () => {
-        const cols = ['A', 'B', 'C', 'D', 'E'];
-        for (const col of cols) {
-            const addr = `Products!${col}${rowNum}`;
-            await fetch('/api/cell', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ address: addr, value: null })
-            });
-            delete dataStore[`Products_${col}${rowNum}`];
-        }
-        row.remove();
-        showSyncStatus('deleted', 'saved');
-        updateAllValues();
-        updateTimestamp();
-        handleSearchFilter();
-    }, 300);
-}
-
-function attachListeners() {
-    document.querySelectorAll('input, select').forEach(el => {
-        if (el.id === 'search-input' || el.id === 'category-filter') {
-            el.addEventListener('input', handleSearchFilter);
-            return;
-        }
-        el.addEventListener('input', recalculate);
-        el.addEventListener('change', recalculate);
-    });
-}
-
-function getCellValue(id) {
-    const el = document.getElementById(id);
-    if (!el) return null;
-    if (el.tagName === 'INPUT' || el.tagName === 'SELECT') {
-        const val = el.value;
-        return (val === '' || isNaN(val)) ? val : Number(val);
-    }
-    const txt = el.innerText.replace(/,/g, '').replace('$', '');
-    return isNaN(txt) || txt === '' ? txt : Number(txt);
-}
-
-function setCellValue(id, val) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    
-    const displayVal = (val === null || val === undefined || (typeof val === 'number' && isNaN(val))) ? '—' : val;
-
-    if (el.tagName === 'INPUT' || el.tagName === 'SELECT') {
-        if (document.activeElement !== el) el.value = (displayVal === '—') ? '' : displayVal;
-    } else {
-        el.innerText = (typeof displayVal === 'number') ? displayVal.toLocaleString(undefined, { maximumFractionDigits: 2 }) : displayVal;
-    }
-    
-    if (id.startsWith('Products_E')) {
-        const rowNum = id.match(/\d+$/)[0];
-        const dot = document.getElementById(`Products_E_indicator_${rowNum}`);
-        if (dot) {
-            dot.className = 'stock-dot ' + (val > 20 ? 'stock-high' : (val >= 10 ? 'stock-mid' : 'stock-low'));
-        }
-    }
 }
 
 function updateAllValues() {
     const tableBody = document.getElementById('products-body');
     const productRows = Array.from(tableBody.querySelectorAll('tr[data-row]')).map(tr => tr.dataset.row);
-    
-    let totalStock = 0;
-    let totalValue = 0;
-    
+    let totalStock = 0, totalValue = 0;
     productRows.forEach(rowNum => {
         const stock = getCellValue(`Products_E${rowNum}`) || 0;
         const price = getCellValue(`Products_D${rowNum}`) || 0;
-        totalStock += stock;
-        totalValue += (stock * price);
-
+        totalStock += stock; totalValue += (stock * price);
         const dot = document.getElementById(`Products_E_indicator_${rowNum}`);
-        if (dot) {
-            dot.className = 'stock-dot ' + (stock > 20 ? 'stock-high' : (stock >= 10 ? 'stock-mid' : 'stock-low'));
-        }
+        if (dot) dot.className = 'stock-dot ' + (stock > 20 ? 'stock-high' : (stock >= 10 ? 'stock-mid' : 'stock-low'));
     });
-    
     document.getElementById("Summary_B2").innerText = totalStock.toLocaleString();
     document.getElementById("Summary_B3").innerText = totalValue.toLocaleString();
-    
-    let maxVal = -1;
-    let maxProd = null;
+    let maxVal = -1, maxProd = null;
     productRows.forEach(rowNum => {
-        const stock = getCellValue(`Products_E${rowNum}`) || 0;
-        const price = getCellValue(`Products_D${rowNum}`) || 0;
-        const val = stock * price;
-        if (val > maxVal) {
-            maxVal = val;
-            maxProd = getCellValue(`Products_B${rowNum}`);
-        }
+        const stock = getCellValue(`Products_E${rowNum}`) || 0, price = getCellValue(`Products_D${rowNum}`) || 0, val = stock * price;
+        if (val > maxVal) { maxVal = val; maxProd = getCellValue(`Products_B${rowNum}`); }
     });
     document.getElementById("Summary_B4").innerText = maxProd || '—';
+    computeAnalytics();
+}
+
+function computeAnalytics() {
+    const rows = Array.from(document.querySelectorAll('#products-body tr[data-row]')); if (rows.length === 0) return;
+    let products = rows.map(r => {
+        const rowNum = r.dataset.row;
+        return { name: getCellValue(`Products_B${rowNum}`) || 'Unnamed', category: getCellValue(`Products_C${rowNum}`) || 'Other', price: getCellValue(`Products_D${rowNum}`) || 0, stock: getCellValue(`Products_E${rowNum}`) || 0, value: (getCellValue(`Products_D${rowNum}`) || 0) * (getCellValue(`Products_E${rowNum}`) || 0) };
+    });
+    const totalVal = products.reduce((s, p) => s + p.value, 0), totalStock = products.reduce((s, p) => s + p.stock, 0), avgStock = totalStock / products.length;
+    const catSet = new Set(products.map(p => p.category));
+    let score = 60; if (avgStock > 20) score += 10; if (products.every(p => p.stock > 0)) score += 10; if (catSet.size >= 3) score += 10; if (totalVal > 10000) score += 10;
+    const c = document.getElementById('health-circle'); if (c) { c.style.background = `conic-gradient(${score > 75 ? '#66bb6a' : (score > 50 ? '#ffca28' : '#ef5350')} ${score}%, #f0f0f0 0)`; document.getElementById('health-value').innerText = score; }
+    const maxS = Math.max(...products.map(p => p.stock), 1);
+    const dist = document.getElementById('stock-dist-chart');
+    if (dist) dist.innerHTML = products.slice(0, 5).map(p => `
+        <div class="chart-row"><div class="chart-info"><span>${p.name}</span><span>${p.stock}</span></div><div class="chart-bar-bg"><div class="chart-bar-fill" style="width: ${(p.stock/maxS)*100}%; background: ${p.stock > 20 ? '#66bb6a' : (p.stock >= 10 ? '#ffca28' : '#ef5350')}"></div></div></div>
+    `).join('');
+    const sortedV = [...products].sort((a,b) => b.value - a.value);
+    const valC = document.getElementById('value-breakdown-chart');
+    if (valC) valC.innerHTML = sortedV.slice(0, 5).map(p => { const pct = totalVal > 0 ? (p.value/totalVal)*100 : 0; return `<div class="chart-row"><div class="chart-info"><span>${p.name}</span><span>${pct.toFixed(0)}%</span></div><div class="chart-bar-bg"><div class="chart-bar-fill" style="width: ${pct}%; background: var(--primary)"></div></div></div>`; }).join('');
+}
+
+function attachListeners() {
+    document.querySelectorAll('input, select').forEach(el => {
+        if (el.id === 'search-input' || el.id === 'category-filter') { el.addEventListener('input', handleSearchFilter); return; }
+        el.addEventListener('input', recalculate); el.addEventListener('change', recalculate);
+        if (el.id.startsWith('Products_B')) el.addEventListener('input', handleNameInput);
+    });
+}
+
+function getCellValue(id) {
+    const el = document.getElementById(id); if (!el) return null;
+    if (el.tagName === 'INPUT' || el.tagName === 'SELECT') { const val = el.value; return (val === '' || isNaN(val)) ? val : Number(val); }
+    return isNaN(el.innerText.replace(/,/g, '').replace('$', '')) ? el.innerText : Number(el.innerText.replace(/,/g, '').replace('$', ''));
+}
+
+function setCellValue(id, val) {
+    const el = document.getElementById(id); if (!el) return;
+    const dv = (val === null || val === undefined || (typeof val === 'number' && isNaN(val))) ? '—' : val;
+    if (el.tagName === 'INPUT' || el.tagName === 'SELECT') { if (document.activeElement !== el) el.value = (dv === '—') ? '' : dv; }
+    else { el.innerText = (typeof dv === 'number') ? dv.toLocaleString() : dv; }
+}
+
+async function loadData() {
+    toggleLoading(true); 
+    const sheets = ['Products', 'Categories', 'Summary'];
+    for (const sheet of sheets) {
+        try {
+            const res = await fetch(`/api/${sheet}`); const json = await res.json();
+            console.log(`${sheet} data received:`, json);
+            const sk = Object.keys(json).sort();
+            for (const k of sk) {
+                const id = sheet + '_' + k; dataStore[id] = json[k];
+                if (sheet === 'Products' && k.startsWith('A')) { 
+                    const rowNum = k.match(/\d+/)[0]; 
+                    if (!document.querySelector(`tr[data-row="${rowNum}"]`)) createProductRowSilently(rowNum); 
+                }
+                setCellValue(id, json[k]);
+            }
+        } catch (e) { console.error(`Failed to load ${sheet}:`, e); }
+    }
+    updateAllValues(); attachListeners(); toggleLoading(false); updateTimestamp();
+}
+
+async function handleNameInput(event) {
+    const el = event.target; const rowNum = el.id.match(/\d+/)[0]; const name = el.value;
+    clearTimeout(detectTimers[rowNum]);
+    detectTimers[rowNum] = setTimeout(async () => {
+        if (!name || name.length < 3) return;
+        const res = await fetch(`/api/detect-category?name=${encodeURIComponent(name)}`); const { category } = await res.json();
+        const select = document.getElementById(`Products_C${rowNum}`);
+        if (select && select.value !== category && category !== 'Other') { select.value = category; recalculate({ target: select }); }
+    }, 400);
+}
+
+function updateTimestamp() { const el = document.getElementById('last-updated'); if (el) el.innerText = `Last synced: ${new Date().toLocaleTimeString()}`; }
+function toggleLoading(show) { const el = document.getElementById('loading-spinner'); if (el) el.style.display = show ? 'block' : 'none'; }
+function toggleOffline(offline) { const el = document.getElementById('offline-banner'); if (el) el.style.display = offline ? 'block' : 'none'; }
+function showSyncStatus(text, type) { let el = document.getElementById('sync-status'); if (!el) { el = document.createElement('div'); el.id = 'sync-status'; document.body.appendChild(el); } el.innerText = text.toUpperCase(); el.className = `status-${type}`; el.style.opacity = '1'; if (type === 'saved') setTimeout(() => { if (el.innerText === 'SAVED') el.style.opacity = '0'; }, 2000); }
+
+async function downloadExcel() {
+    const res = await fetch('/api/download'); const blob = await res.blob();
+    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url;
+    a.download = `excel2app_export_${new Date().getTime()}.xlsx`; a.click(); URL.revokeObjectURL(url);
 }
 
 function handleSearchFilter() {
-    const search = document.getElementById('search-input').value.toLowerCase();
-    const category = document.getElementById('category-filter').value;
-    const rows = document.querySelectorAll('#products-body tr[data-row]');
-    let anyVisible = false;
-
-    rows.forEach(row => {
-        const nameInput = row.querySelector('input[id^="Products_B"]');
-        if (!nameInput) return;
-        const name = nameInput.value.toLowerCase();
-        
-        const catSelect = row.querySelector('select[id^="Products_C"]');
-        if (!catSelect) return;
-        const rowCategory = catSelect.value;
-        
-        const matchesSearch = name.includes(search);
-        const matchesCategory = category === 'All' || rowCategory === category;
-        
-        if (matchesSearch && matchesCategory) {
-            row.style.display = '';
-            anyVisible = true;
-        } else {
-            row.style.display = 'none';
-        }
+    const s = document.getElementById('search-input').value.toLowerCase();
+    const c = document.getElementById('category-filter').value;
+    document.querySelectorAll('#products-body tr[data-row]').forEach(row => {
+        const name = (row.querySelector('input[id^="Products_B"]')?.value || '').toLowerCase();
+        const cat = row.querySelector('select[id^="Products_C"]')?.value || 'Other';
+        row.style.display = (name.includes(s) && (c === 'All' || cat === c)) ? '' : 'none';
     });
-
-    const noResults = document.getElementById('no-results-row');
-    if (noResults) noResults.style.display = anyVisible ? 'none' : '';
 }
 
-async function downloadExcel() {
-    const btn = event.currentTarget;
-    const originalText = btn.innerText;
-    btn.innerText = 'Exporting...';
-    try {
-        const response = await fetch('/api/download');
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'excel2app_export.xlsx';
-        a.click();
-        URL.revokeObjectURL(url);
-    } catch (e) {
-        alert('Download failed');
-    } finally {
-        btn.innerText = originalText;
-    }
-}
+window.addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); }
+    if (e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); }
+});
 
+// INITIAL CALL
 loadData();
