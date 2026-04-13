@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel2App Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="offline-banner">Cannot connect to server — make sure server.js is running</div>
+    <div id="loading-spinner"><div class="spinner"></div></div>
+
+    <nav class="topbar">
+        <div class="topbar-left">
+            <div class="grid-icon">
+                <span></span><span></span><span></span>
+                <span></span><span></span><span></span>
+                <span></span><span></span><span></span>
+            </div>
+            <span class="brand">Excel2App</span>
+        </div>
+        <div class="topbar-center">
+            <span class="breadcrumb">inventory.xlsx &nbsp; > &nbsp; Products</span>
+        </div>
+        <div class="topbar-right">
+            <div class="server-status">
+                <span class="pulse-dot"></span>
+                <span>Server Online</span>
+            </div>
+        </div>
+    </nav>
+
+    <main class="content-wrapper">
+        <section class="summary-container">
+            <div class="metric-card">
+                <div class="metric-label">Total Stock Units</div>
+                <div id="Summary_B2" class="metric-value">0</div>
+                <div class="metric-sublabel">units in stock</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Total Inventory Value</div>
+                <div class="metric-value">
+                    <span class="currency-symbol">$</span><span id="Summary_B3">0</span>
+                </div>
+                <div class="metric-sublabel">current market valuation</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Most Valuable Product</div>
+                <div id="Summary_B4" class="metric-value">---</div>
+                <div class="metric-sublabel">by total inventory value</div>
+            </div>
+            <!-- Hidden technical cells to preserve logic -->
+            <div style="display: none;">
+                <span id="Summary_B5">0</span>
+                <span id="Summary_B6">0</span>
+            </div>
+        </section>
+
+        <div class="section-divider">
+            <span class="section-label">PRODUCTS</span>
+        </div>
+
+        <section class="table-container">
+            <table class="products-table">
+                <thead>
+                    <tr>
+                        <th style="width: 60px">ID</th>
+                        <th style="width: 200px">Name</th>
+                        <th style="width: 140px">Category</th>
+                        <th style="width: 120px">Price</th>
+                        <th style="width: 100px">Stock</th>
+                        <th style="width: 80px">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="products-body">
+                    <tr data-row="2">
+                        <td id="Products_A2" class="id-col">101</td>
+                        <td><input type="text" id="Products_B2"></td>
+                        <td>
+                            <select id="Products_C2">
+                                <option value="Electronics">Electronics</option>
+                                <option value="Furniture">Furniture</option>
+                            </select>
+                        </td>
+                        <td><input type="number" id="Products_D2" class="price-input"></td>
+                        <td><input type="number" id="Products_E2"></td>
+                        <td><button class="btn-delete" onclick="deleteProduct(2)">×</button></td>
+                    </tr>
+                    <tr data-row="3">
+                        <td id="Products_A3" class="id-col">102</td>
+                        <td><input type="text" id="Products_B3"></td>
+                        <td>
+                            <select id="Products_C3">
+                                <option value="Electronics">Electronics</option>
+                                <option value="Furniture">Furniture</option>
+                            </select>
+                        </td>
+                        <td><input type="number" id="Products_D3" class="price-input"></td>
+                        <td><input type="number" id="Products_E3"></td>
+                        <td><button class="btn-delete" onclick="deleteProduct(3)">×</button></td>
+                    </tr>
+                    <tr data-row="4">
+                        <td id="Products_A4" class="id-col">103</td>
+                        <td><input type="text" id="Products_B4"></td>
+                        <td>
+                            <select id="Products_C4">
+                                <option value="Electronics">Electronics</option>
+                                <option value="Furniture">Furniture</option>
+                            </select>
+                        </td>
+                        <td><input type="number" id="Products_D4" class="price-input"></td>
+                        <td><input type="number" id="Products_E4"></td>
+                        <td><button class="btn-delete" onclick="deleteProduct(4)">×</button></td>
+                    </tr>
+                    <tr data-row="5">
+                        <td id="Products_A5" class="id-col">104</td>
+                        <td><input type="text" id="Products_B5"></td>
+                        <td>
+                            <select id="Products_C5">
+                                <option value="Electronics">Electronics</option>
+                                <option value="Furniture">Furniture</option>
+                            </select>
+                        </td>
+                        <td><input type="number" id="Products_D5" class="price-input"></td>
+                        <td><input type="number" id="Products_E5"></td>
+                        <td><button class="btn-delete" onclick="deleteProduct(5)">×</button></td>
+                    </tr>
+                </tbody>
+            </table>
+            <button class="btn-add" onclick="addProduct()">+ Add Product</button>
+        </section>
+    </main>
+
+    <footer class="bottom-status-bar">
+        <div class="status-left">EXCEL2APP</div>
+        <div class="status-right" id="last-updated">Last synced: connecting...</div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
