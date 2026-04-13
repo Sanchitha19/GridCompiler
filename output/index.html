@@ -3,137 +3,169 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Excel2App Dashboard</title>
+    <title>Excel2App | Friendly Dashboard</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div id="offline-banner">Cannot connect to server — make sure server.js is running</div>
+    <div id="offline-banner">Cannot connect to server — check that server.js is running</div>
     <div id="loading-spinner"><div class="spinner"></div></div>
 
     <nav class="topbar">
         <div class="topbar-left">
-            <div class="grid-icon">
-                <span></span><span></span><span></span>
-                <span></span><span></span><span></span>
-                <span></span><span></span><span></span>
+            <div class="brand-logo">
+                <span class="logo-sq indigo"></span>
+                <span class="logo-sq coral"></span>
+                <span class="logo-sq green"></span>
+                <span class="logo-sq amber"></span>
             </div>
-            <span class="brand">Excel2App</span>
+            <span class="brand-name">Excel2App</span>
         </div>
         <div class="topbar-center">
-            <span class="breadcrumb">inventory.xlsx &nbsp; > &nbsp; Products</span>
+            <div class="file-pill">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                <span>inventory.xlsx</span>
+            </div>
         </div>
         <div class="topbar-right">
-            <div class="server-status">
-                <span class="pulse-dot"></span>
-                <span>Server Online</span>
+            <div class="status-indicator">
+                <span class="status-dot-green"></span>
+                Live
             </div>
+            <button class="btn-download" onclick="downloadExcel()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download Excel
+            </button>
         </div>
     </nav>
 
-    <main class="content-wrapper">
-        <section class="summary-container">
-            <div class="metric-card">
-                <div class="metric-label">Total Stock Units</div>
-                <div id="Summary_B2" class="metric-value">0</div>
-                <div class="metric-sublabel">units in stock</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Total Inventory Value</div>
-                <div class="metric-value">
-                    <span class="currency-symbol">$</span><span id="Summary_B3">0</span>
+    <main class="main-content">
+        <section class="summary-section">
+            <div class="metrics-grid">
+                <div class="card metric-card">
+                    <div class="card-icon stock-indigo">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                    </div>
+                    <div class="metric-label">Total Stock Units</div>
+                    <div id="Summary_B2" class="metric-value">0</div>
+                    <div class="metric-trend">across all inventory</div>
                 </div>
-                <div class="metric-sublabel">current market valuation</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Most Valuable Product</div>
-                <div id="Summary_B4" class="metric-value">---</div>
-                <div class="metric-sublabel">by total inventory value</div>
-            </div>
-            <!-- Hidden technical cells to preserve logic -->
-            <div style="display: none;">
-                <span id="Summary_B5">0</span>
-                <span id="Summary_B6">0</span>
+                <div class="card metric-card">
+                    <div class="card-icon value-coral">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    </div>
+                    <div class="metric-label">Total Inventory Value</div>
+                    <div class="metric-value-group">
+                        <span class="currency-prefix">$</span><span id="Summary_B3" class="metric-value">0</span>
+                    </div>
+                    <div class="metric-trend">current market valuation</div>
+                </div>
+                <div class="card metric-card">
+                    <div class="card-icon top-green">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
+                    </div>
+                    <div class="metric-label">Most Valuable Product</div>
+                    <div id="Summary_B4" class="metric-value">---</div>
+                    <div class="metric-trend">highest stock value</div>
+                </div>
             </div>
         </section>
 
-        <div class="section-divider">
-            <span class="section-label">PRODUCTS</span>
-        </div>
+        <section class="products-section">
+            <div class="section-header">
+                <h2>Products</h2>
+                <div class="header-controls">
+                    <div class="search-box">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input type="text" id="search-input" placeholder="Search products...">
+                    </div>
+                    <select id="category-filter" class="filter-select">
+                        <option value="All">All Categories</option>
+                        <option value="Electronics">Electronics</option>
+                        <option value="Furniture">Furniture</option>
+                    </select>
+                </div>
+            </div>
 
-        <section class="table-container">
-            <table class="products-table">
-                <thead>
-                    <tr>
-                        <th style="width: 60px">ID</th>
-                        <th style="width: 200px">Name</th>
-                        <th style="width: 140px">Category</th>
-                        <th style="width: 120px">Price</th>
-                        <th style="width: 100px">Stock</th>
-                        <th style="width: 80px">Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="products-body">
-                    <tr data-row="2">
-                        <td id="Products_A2" class="id-col">101</td>
-                        <td><input type="text" id="Products_B2"></td>
-                        <td>
-                            <select id="Products_C2">
-                                <option value="Electronics">Electronics</option>
-                                <option value="Furniture">Furniture</option>
-                            </select>
-                        </td>
-                        <td><input type="number" id="Products_D2" class="price-input"></td>
-                        <td><input type="number" id="Products_E2"></td>
-                        <td><button class="btn-delete" onclick="deleteProduct(2)">×</button></td>
-                    </tr>
-                    <tr data-row="3">
-                        <td id="Products_A3" class="id-col">102</td>
-                        <td><input type="text" id="Products_B3"></td>
-                        <td>
-                            <select id="Products_C3">
-                                <option value="Electronics">Electronics</option>
-                                <option value="Furniture">Furniture</option>
-                            </select>
-                        </td>
-                        <td><input type="number" id="Products_D3" class="price-input"></td>
-                        <td><input type="number" id="Products_E3"></td>
-                        <td><button class="btn-delete" onclick="deleteProduct(3)">×</button></td>
-                    </tr>
-                    <tr data-row="4">
-                        <td id="Products_A4" class="id-col">103</td>
-                        <td><input type="text" id="Products_B4"></td>
-                        <td>
-                            <select id="Products_C4">
-                                <option value="Electronics">Electronics</option>
-                                <option value="Furniture">Furniture</option>
-                            </select>
-                        </td>
-                        <td><input type="number" id="Products_D4" class="price-input"></td>
-                        <td><input type="number" id="Products_E4"></td>
-                        <td><button class="btn-delete" onclick="deleteProduct(4)">×</button></td>
-                    </tr>
-                    <tr data-row="5">
-                        <td id="Products_A5" class="id-col">104</td>
-                        <td><input type="text" id="Products_B5"></td>
-                        <td>
-                            <select id="Products_C5">
-                                <option value="Electronics">Electronics</option>
-                                <option value="Furniture">Furniture</option>
-                            </select>
-                        </td>
-                        <td><input type="number" id="Products_D5" class="price-input"></td>
-                        <td><input type="number" id="Products_E5"></td>
-                        <td><button class="btn-delete" onclick="deleteProduct(5)">×</button></td>
-                    </tr>
-                </tbody>
-            </table>
-            <button class="btn-add" onclick="addProduct()">+ Add Product</button>
+            <div class="table-card">
+                <table class="products-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Price</th>
+                            <th>Stock</th>
+                            <th style="width: 60px"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="products-body">
+                        <tr data-row="2">
+                            <td><span id="Products_A2" class="id-text">101</span></td>
+                            <td><input type="text" id="Products_B2"></td>
+                            <td>
+                                <div class="select-pill-wrapper">
+                                    <select id="Products_C2" class="category-pill-select">
+                                        <option value="Electronics">Electronics</option>
+                                        <option value="Furniture">Furniture</option>
+                                    </select>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="price-cell">
+                                    <span class="currency-label">$</span>
+                                    <input type="number" id="Products_D2">
+                                </div>
+                            </td>
+                            <td>
+                                <div class="stock-cell-content">
+                                    <span id="Products_E_indicator_2" class="stock-dot"></span>
+                                    <input type="number" id="Products_E2">
+                                </div>
+                            </td>
+                            <td><button class="btn-delete" onclick="deleteProduct(2)">×</button></td>
+                        </tr>
+                        <tr data-row="3">
+                            <td><span id="Products_A3" class="id-text">102</span></td>
+                            <td><input type="text" id="Products_B3"></td>
+                            <td>
+                                <div class="select-pill-wrapper">
+                                    <select id="Products_C3" class="category-pill-select">
+                                        <option value="Electronics">Electronics</option>
+                                        <option value="Furniture">Furniture</option>
+                                    </select>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="price-cell">
+                                    <span class="currency-label">$</span>
+                                    <input type="number" id="Products_D3">
+                                </div>
+                            </td>
+                            <td>
+                                <div class="stock-cell-content">
+                                    <span id="Products_E_indicator_3" class="stock-dot"></span>
+                                    <input type="number" id="Products_E3">
+                                </div>
+                            </td>
+                            <td><button class="btn-delete" onclick="deleteProduct(3)">×</button></td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr id="no-results-row" style="display: none;">
+                            <td colspan="6" class="no-results">No products found for this search.</td>
+                        </tr>
+                    </tfoot>
+                </table>
+                <button class="btn-add-row" onclick="addProduct()">
+                    <span class="add-plus">+</span> Add Product
+                </button>
+            </div>
         </section>
     </main>
 
-    <footer class="bottom-status-bar">
-        <div class="status-left">EXCEL2APP</div>
-        <div class="status-right" id="last-updated">Last synced: connecting...</div>
+    <footer class="app-footer">
+        <div class="footer-left">Generated by Excel2App Compiler</div>
+        <div class="footer-right" id="last-updated">Initial load...</div>
     </footer>
 
     <script src="app.js"></script>

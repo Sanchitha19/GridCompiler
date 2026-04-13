@@ -6,44 +6,9 @@ const dataStore = {};
 let syncTimer = null;
 let nextId = 105;
 
-// Inject Dynamic Styles for Sync UI
-const style = document.createElement('style');
-style.textContent = `
-    #sync-status { 
-        position: fixed; bottom: 80px; right: 20px; 
-        padding: 8px 16px; border-radius: 20px; 
-        font-size: 12px; font-weight: bold; 
-        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        transition: all 0.3s;
-        z-index: 1000;
-        background: white;
-    }
-    .status-saving { color: #1a73e8; border: 1px solid #1a73e8; }
-    .status-saved { color: #2e7d32; border: 1px solid #2e7d32; }
-    .status-error { color: #d32f2f; border: 1px solid #d32f2f; background: #ffebee !important; }
-    .sync-error { border: 2px solid #d32f2f !important; background: #fff5f5 !important; }
-`;
-document.head.appendChild(style);
-
-function showSyncStatus(text, type) {
-    let el = document.getElementById('sync-status');
-    if (!el) {
-        el = document.createElement('div');
-        el.id = 'sync-status';
-        document.body.appendChild(el);
-    }
-    el.innerText = text.toUpperCase();
-    el.className = `status-${type}`;
-    if (type === 'saved') {
-        setTimeout(() => { if (el.innerText === 'SAVED') el.style.opacity = '0'; }, 2000);
-    } else {
-        el.style.opacity = '1';
-    }
-}
-
 function updateTimestamp() {
     const el = document.getElementById('last-updated');
-    if (el) el.innerText = `Last updated: ${new Date().toLocaleTimeString()}`;
+    if (el) el.innerText = `Last synced: ${new Date().toLocaleTimeString()}`;
 }
 
 function toggleLoading(show) {
@@ -54,6 +19,21 @@ function toggleLoading(show) {
 function toggleOffline(offline) {
     const el = document.getElementById('offline-banner');
     if (el) el.style.display = offline ? 'block' : 'none';
+}
+
+function showSyncStatus(text, type) {
+    let el = document.getElementById('sync-status');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'sync-status';
+        document.body.appendChild(el);
+    }
+    el.innerText = text.toUpperCase();
+    el.className = `status-${type}`;
+    el.style.opacity = '1';
+    if (type === 'saved') {
+        setTimeout(() => { if (el.innerText === 'SAVED') el.style.opacity = '0'; }, 2000);
+    }
 }
 
 async function loadData() {
@@ -82,17 +62,12 @@ async function loadData() {
     if (success) updateTimestamp();
 }
 
-/**
- * Optimistic recalculation for instant feedback
- */
 async function recalculate(event) {
     const target = event.target || event;
     if (!target || !target.id) return;
 
-    // 1. Instant Visual Feedback
     updateAllValues();
     
-    // 2. Debounced Sync to Server
     const id = target.id;
     const val = getCellValue(id);
     const addr = id.replace('_', '!');
@@ -105,35 +80,25 @@ async function recalculate(event) {
             const res = await fetch('/api/cell', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    address: addr, 
-                    value: val, 
-                    type: typeof val === 'number' ? 'NUMBER' : 'STRING' 
-                })
+                body: JSON.stringify({ address: addr, value: val, type: typeof val === 'number' ? 'NUMBER' : 'STRING' })
             });
             if (res.ok) {
                 showSyncStatus('saved', 'saved');
                 target.classList.remove('sync-error');
                 target.classList.add('save-success-ping');
                 setTimeout(() => target.classList.remove('save-success-ping'), 1000);
-                
-                const data = await res.json();
-                if (data.newValue !== undefined) dataStore[id] = data.newValue;
                 updateTimestamp();
-            } else {
-                throw new Error();
-            }
+            } else { throw new Error(); }
         } catch (e) {
             showSyncStatus('sync error', 'error');
             target.classList.add('sync-error');
-            toggleOffline(true);
         }
     }, 500);
 }
 
 function addProduct() {
     const table = document.getElementById('products-body');
-    const rows = Array.from(table.querySelectorAll('tr'));
+    const rows = Array.from(table.querySelectorAll('tr[data-row]'));
     
     let maxRowNum = 1;
     rows.forEach(r => {
@@ -144,6 +109,7 @@ function addProduct() {
     
     const row = document.createElement('tr');
     row.dataset.row = rowNum;
+    row.classList.add('new-row-anim');
     
     const idValue = nextId++;
     
@@ -151,14 +117,28 @@ function addProduct() {
         <td id="Products_A${rowNum}" class="read-only">${idValue}</td>
         <td><input type="text" id="Products_B${rowNum}" placeholder="Product name"></td>
         <td>
-            <select id="Products_C${rowNum}">
-                <option value="Electronics">Electronics</option>
-                <option value="Furniture">Furniture</option>
-            </select>
+            <div class="select-pill-wrapper">
+                <select id="Products_C${rowNum}" class="category-pill-select">
+                    <option value="Electronics">Electronics</option>
+                    <option value="Furniture">Furniture</option>
+                </select>
+            </div>
         </td>
-        <td><input type="number" id="Products_D${rowNum}" placeholder="0.00"></td>
-        <td><input type="number" id="Products_E${rowNum}" placeholder="0"></td>
-        <td><button class="btn btn-delete" onclick="deleteProduct(${rowNum})">Delete</button></td>
+        <td>
+            <div class="price-cell">
+                <span class="currency-label">$</span>
+                <input type="number" id="Products_D${rowNum}" placeholder="0.00">
+            </div>
+        </td>
+        <td>
+            <div class="stock-cell-content">
+                <span id="Products_E_indicator_${rowNum}" class="stock-dot"></span>
+                <input type="number" id="Products_E${rowNum}" placeholder="0">
+            </div>
+        </td>
+        <td style="text-align: center;">
+            <button class="btn-delete" onclick="deleteProduct(${rowNum})" title="Delete row">×</button>
+        </td>
     `;
     
     table.appendChild(row);
@@ -171,37 +151,43 @@ function addProduct() {
     
     attachListeners();
     updateAllValues();
+    handleSearchFilter();
 }
 
 async function deleteProduct(rowNum) {
-    if (!confirm('Are you sure you want to delete this product?')) return;
+    if (!confirm('Discard this product row?')) return;
     
     const row = document.querySelector(`tr[data-row="${rowNum}"]`);
     if (!row) return;
 
+    row.classList.add('row-out-anim');
     showSyncStatus('deleting...', 'saving');
 
-    const cols = ['A', 'B', 'C', 'D', 'E'];
-    for (const col of cols) {
-        const addr = `Products!${col}${rowNum}`;
-        await fetch('/api/cell', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ address: addr, value: null })
-        });
-        delete dataStore[`Products_${col}${rowNum}`];
-    }
-    
-    row.remove();
-    showSyncStatus('deleted', 'saved');
-    updateAllValues();
-    updateTimestamp();
+    setTimeout(async () => {
+        const cols = ['A', 'B', 'C', 'D', 'E'];
+        for (const col of cols) {
+            const addr = `Products!${col}${rowNum}`;
+            await fetch('/api/cell', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address: addr, value: null })
+            });
+            delete dataStore[`Products_${col}${rowNum}`];
+        }
+        row.remove();
+        showSyncStatus('deleted', 'saved');
+        updateAllValues();
+        updateTimestamp();
+        handleSearchFilter();
+    }, 300);
 }
 
 function attachListeners() {
     document.querySelectorAll('input, select').forEach(el => {
-        el.removeEventListener('input', recalculate);
-        el.removeEventListener('change', recalculate);
+        if (el.id === 'search-input' || el.id === 'category-filter') {
+            el.addEventListener('input', handleSearchFilter);
+            return;
+        }
         el.addEventListener('input', recalculate);
         el.addEventListener('change', recalculate);
     });
@@ -214,7 +200,7 @@ function getCellValue(id) {
         const val = el.value;
         return (val === '' || isNaN(val)) ? val : Number(val);
     }
-    const txt = el.innerText.replace(/,/g, '');
+    const txt = el.innerText.replace(/,/g, '').replace('$', '');
     return isNaN(txt) || txt === '' ? txt : Number(txt);
 }
 
@@ -222,79 +208,107 @@ function setCellValue(id, val) {
     const el = document.getElementById(id);
     if (!el) return;
     
-    // Handle Empty/Null/NaN values with "—"
     const displayVal = (val === null || val === undefined || (typeof val === 'number' && isNaN(val))) ? '—' : val;
 
-    if (typeof val === 'object' && val.error) {
-        el.innerText = '#ERROR!';
-        el.classList.add('error-cell');
+    if (el.tagName === 'INPUT' || el.tagName === 'SELECT') {
+        if (document.activeElement !== el) el.value = (displayVal === '—') ? '' : displayVal;
     } else {
-        if (el.tagName === 'INPUT' || el.tagName === 'SELECT') {
-            if (document.activeElement !== el) el.value = (displayVal === '—') ? '' : displayVal;
-        } else {
-            el.innerText = (typeof displayVal === 'number') ? displayVal.toLocaleString(undefined, { maximumFractionDigits: 2 }) : displayVal;
+        el.innerText = (typeof displayVal === 'number') ? displayVal.toLocaleString(undefined, { maximumFractionDigits: 2 }) : displayVal;
+    }
+    
+    if (id.startsWith('Products_E')) {
+        const rowNum = id.match(/\d+$/)[0];
+        const dot = document.getElementById(`Products_E_indicator_${rowNum}`);
+        if (dot) {
+            dot.className = 'stock-dot ' + (val > 20 ? 'stock-high' : (val >= 10 ? 'stock-mid' : 'stock-low'));
         }
-        el.classList.remove('error-cell');
     }
-}
-
-// Global Excel Operations
-const Ops = {
-    SUM: (...args) => args.flat().reduce((a, b) => a + (Number(b) || 0), 0),
-    AVERAGE: (...args) => {
-        const flat = args.flat();
-        return flat.reduce((a, b) => a + (Number(b) || 0), 0) / flat.length;
-    },
-    IF: (cond, a, b) => cond ? a : b,
-    PRODUCT: (...args) => args.flat().reduce((a, b) => a * (Number(b) || 1), 1),
-    XLOOKUP: (search, ...args) => {
-        const half = Math.floor(args.length / 2);
-        const keys = args.slice(0, half);
-        const vals = args.slice(half);
-        const idx = keys.indexOf(search);
-        return idx !== -1 ? vals[idx] : "#N/A";
-    }
-};
-
-function getCellValueExtended(id) {
-    const val = getCellValue(id);
-    return (val === null || val === undefined) ? dataStore[id] : val;
 }
 
 function updateAllValues() {
     const tableBody = document.getElementById('products-body');
-    if (!tableBody) return;
-    
-    const productRows = Array.from(tableBody.querySelectorAll('tr')).map(tr => tr.dataset.row);
+    const productRows = Array.from(tableBody.querySelectorAll('tr[data-row]')).map(tr => tr.dataset.row);
     
     let totalStock = 0;
     let totalValue = 0;
     
     productRows.forEach(rowNum => {
-        const stock = getCellValueExtended(`Products_E${rowNum}`) || 0;
-        const price = getCellValueExtended(`Products_D${rowNum}`) || 0;
+        const stock = getCellValue(`Products_E${rowNum}`) || 0;
+        const price = getCellValue(`Products_D${rowNum}`) || 0;
         totalStock += stock;
         totalValue += (stock * price);
+
+        const dot = document.getElementById(`Products_E_indicator_${rowNum}`);
+        if (dot) {
+            dot.className = 'stock-dot ' + (stock > 20 ? 'stock-high' : (stock >= 10 ? 'stock-mid' : 'stock-low'));
+        }
     });
     
-    setCellValue("Summary_B2", totalStock || 0);
-    setCellValue("Summary_B3", totalValue || 0);
+    document.getElementById("Summary_B2").innerText = totalStock.toLocaleString();
+    document.getElementById("Summary_B3").innerText = totalValue.toLocaleString();
     
     let maxVal = -1;
     let maxProd = null;
     productRows.forEach(rowNum => {
-        const stock = getCellValueExtended(`Products_E${rowNum}`) || 0;
-        const price = getCellValueExtended(`Products_D${rowNum}`) || 0;
+        const stock = getCellValue(`Products_E${rowNum}`) || 0;
+        const price = getCellValue(`Products_D${rowNum}`) || 0;
         const val = stock * price;
         if (val > maxVal) {
             maxVal = val;
-            maxProd = getCellValueExtended(`Products_B${rowNum}`);
+            maxProd = getCellValue(`Products_B${rowNum}`);
         }
     });
-    
-    setCellValue("Summary_B4", maxProd);
-    setCellValue("Summary_B6", totalStock || 0);
+    document.getElementById("Summary_B4").innerText = maxProd || '—';
 }
 
-// Initial load
+function handleSearchFilter() {
+    const search = document.getElementById('search-input').value.toLowerCase();
+    const category = document.getElementById('category-filter').value;
+    const rows = document.querySelectorAll('#products-body tr[data-row]');
+    let anyVisible = false;
+
+    rows.forEach(row => {
+        const nameInput = row.querySelector('input[id^="Products_B"]');
+        if (!nameInput) return;
+        const name = nameInput.value.toLowerCase();
+        
+        const catSelect = row.querySelector('select[id^="Products_C"]');
+        if (!catSelect) return;
+        const rowCategory = catSelect.value;
+        
+        const matchesSearch = name.includes(search);
+        const matchesCategory = category === 'All' || rowCategory === category;
+        
+        if (matchesSearch && matchesCategory) {
+            row.style.display = '';
+            anyVisible = true;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    const noResults = document.getElementById('no-results-row');
+    if (noResults) noResults.style.display = anyVisible ? 'none' : '';
+}
+
+async function downloadExcel() {
+    const btn = event.currentTarget;
+    const originalText = btn.innerText;
+    btn.innerText = 'Exporting...';
+    try {
+        const response = await fetch('/api/download');
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'excel2app_export.xlsx';
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        alert('Download failed');
+    } finally {
+        btn.innerText = originalText;
+    }
+}
+
 loadData();
