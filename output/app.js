@@ -251,6 +251,22 @@ function computeAnalytics() {
     const sortedV = [...products].sort((a,b) => b.value - a.value);
     const valC = document.getElementById('value-breakdown-chart');
     if (valC) valC.innerHTML = sortedV.slice(0, 5).map(p => { const pct = totalVal > 0 ? (p.value/totalVal)*100 : 0; return `<div class="chart-row"><div class="chart-info"><span>${p.name}</span><span>${pct.toFixed(0)}%</span></div><div class="chart-bar-bg"><div class="chart-bar-fill" style="width: ${pct}%; background: var(--primary)"></div></div></div>`; }).join('');
+    
+    // Restore Category Insights
+    const catS = {}; products.forEach(p => { if (!catS[p.category]) catS[p.category] = { count: 0, stock: 0, val: 0 }; catS[p.category].count++; catS[p.category].stock += p.stock; catS[p.category].val += p.value; });
+    const catTable = document.getElementById('category-insights-table');
+    if (catTable) catTable.innerHTML = Object.entries(catS).map(([cat, s]) => `
+        <div class="insight-mini-card"><span class="cat-badge" style="background: var(--primary-light); color: var(--primary); padding: 5px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; margin-bottom: 10px; display: inline-block;">${cat}</span><div class="cat-stats"><div class="stat-low">Units <span class="stat-bold">${s.stock}</span></div><div class="stat-low">Avg Price <span class="stat-bold">$${(s.val/s.stock || 0).toFixed(0)}</span></div></div></div>
+    `).join('');
+    
+    // Restore Alerts & Warnings
+    const alts = []; 
+    products.forEach(p => { 
+        if (p.stock === 0) alts.push({ type: 'critical', title: 'OUT OF STOCK', desc: `${p.name} is out.` }); 
+        else if (p.stock < 10) alts.push({ type: 'warning', title: 'LOW STOCK', desc: `${p.name} is low.` }); 
+    });
+    const alertBox = document.getElementById('alerts-container');
+    if (alertBox) alertBox.innerHTML = alts.length > 0 ? alts.map(a => `<div class="alert-card ${a.type}"><div class="alert-content"><div class="alert-title">${a.title}</div><div class="alert-desc">${a.desc}</div></div></div>`).join('') : '<div class="no-alerts">All systems optimal.</div>';
 }
 
 function attachListeners() {
