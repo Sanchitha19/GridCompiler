@@ -328,9 +328,23 @@ function toggleOffline(offline) { const el = document.getElementById('offline-ba
 function showSyncStatus(text, type) { let el = document.getElementById('sync-status'); if (!el) { el = document.createElement('div'); el.id = 'sync-status'; document.body.appendChild(el); } el.innerText = text.toUpperCase(); el.className = `status-${type}`; el.style.opacity = '1'; if (type === 'saved') setTimeout(() => { if (el.innerText === 'SAVED') el.style.opacity = '0'; }, 2000); }
 
 async function downloadExcel() {
-    const res = await fetch('/api/download'); const blob = await res.blob();
-    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url;
-    a.download = `excel2app_export_${new Date().getTime()}.xlsx`; a.click(); URL.revokeObjectURL(url);
+    try {
+        const response = await fetch('/api/download');
+        if (!response.ok) throw new Error('Download failed');
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = 'excel2app_export.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    } catch(e) {
+        console.error('Download error:', e);
+        alert('Download failed — check server is running');
+    }
 }
 
 function handleSearchFilter() {
