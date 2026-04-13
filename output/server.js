@@ -81,6 +81,59 @@ app.get('/api/detect-category', (req, res) => {
     res.json({ category: autoDetectCategory(req.query.name || '') });
 });
 
+app.get('/api/download', (req, res) => {
+    try {
+        const XLSX = require('xlsx');
+        
+        const wb = XLSX.utils.book_new();
+        
+        const productRows = [['ID','Name','Category','Price','Stock']];
+        const allKeys = Object.keys(data).filter(k => k.startsWith('Products!A'));
+        const rowNums = allKeys.map(k => parseInt(k.replace('Products!A',''))).filter(n => n >= 2).sort((a,b) => a-b);
+        
+        rowNums.forEach(i => {
+            productRows.push([
+                data['Products!A'+i] || '',
+                data['Products!B'+i] || '',
+                data['Products!C'+i] || '',
+                Number(data['Products!D'+i]) || 0,
+                Number(data['Products!E'+i]) || 0
+            ]);
+        });
+        
+        const wsProducts = XLSX.utils.aoa_to_sheet(productRows);
+        XLSX.utils.book_append_sheet(wb, wsProducts, 'Products');
+        
+        const totalStock = rowNums.reduce((sum,i) => sum + (Number(data['Products!E'+i])||0), 0);
+        const totalValue = rowNums.reduce((sum,i) => sum + ((Number(data['Products!D'+i])||0) * (Number(data['Products!E'+i])||0)), 0);
+        
+        const summaryRows = [
+            ['Metric', 'Value'],
+            ['Total Stock', totalStock],
+            ['Total Value', totalValue]
+        ];
+        const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+        XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+        
+        const buffer = XLSX.write(wb, { 
+            bookType: 'xlsx', 
+            type: 'buffer'
+        });
+        
+        console.log('Buffer length:', buffer.length);
+        console.log('First 4 bytes:', buffer[0], buffer[1], buffer[2], buffer[3]);
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="export.xlsx"');
+        res.setHeader('Content-Length', buffer.length);
+        res.end(buffer);
+        
+    } catch(err) {
+        console.error('Download error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/:sheet', (req, res) => {
     evaluateFormulas();
     const sheet = req.params.sheet;
@@ -116,40 +169,6 @@ app.post('/api/import', upload.single('file'), (req, res) => {
     } catch (e) {
         res.status(500).json({ error: 'Import failed' });
     }
-});
-
-app.get('/api/download', (req, res) => {
-    evaluateFormulas();
-    const wb = XLSX.utils.book_new();
-
-    const productRows = new Set();
-    Object.keys(data).forEach(k => { if (k.startsWith('Products!')) productRows.add(k.match(/\d+$/)[0]); });
-    const pAOA = [["ID", "Name", "Category", "Price", "Stock"]];
-    Array.from(productRows).sort((a,b)=>a-b).forEach(r => pAOA.push([data[`Products!A${r}`], data[`Products!B${r}`], data[`Products!C${r}`], Number(data[`Products!D${r}`]), Number(data[`Products!E${r}`])]));
-    const ws1 = XLSX.utils.aoa_to_sheet(pAOA);
-    ws1['!cols'] = [{wch: 8}, {wch: 25}, {wch: 15}, {wch: 12}, {wch: 10}];
-    XLSX.utils.book_append_sheet(wb, ws1, "Products");
-
-    const sAOA = [["METRIC", "VALUE"], ["Total Units", data["Summary!B2"]], ["Total Value", data["Summary!B3"]], ["Top Product", data["Summary!B4"]]];
-    const ws2 = XLSX.utils.aoa_to_sheet(sAOA);
-    ws2['!cols'] = [{wch: 25}, {wch: 20}];
-    XLSX.utils.book_append_sheet(wb, ws2, "Summary");
-
-    const lowStock = Array.from(productRows).filter(r => data[`Products!E${r}`] < 10).map(r => data[`Products!B${r}`]).join(', ');
-    const aAOA = [
-        ["ANALYTICS REPORT", ""], ["Export Timestamp", new Date().toLocaleString()],
-        ["Total Products", productRows.size], ["Total Categories", new Set(Array.from(productRows).map(r => data[`Products!C${r}`])).size],
-        ["Low Stock Items", lowStock || "None"], ["Highest Value Product", data["Summary!B4"]]
-    ];
-    const ws3 = XLSX.utils.aoa_to_sheet(aAOA);
-    ws3['!cols'] = [{wch: 25}, {wch: 60}];
-    XLSX.utils.book_append_sheet(wb, ws3, "Analytics");
-
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename="excel2app_export.xlsx"');
-    res.setHeader('Content-Length', buffer.length);
-    res.end(buffer);
 });
 
 loadInitialData();
